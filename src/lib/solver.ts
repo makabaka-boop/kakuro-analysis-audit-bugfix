@@ -152,8 +152,8 @@ function analyzeRun(
       let support = 0;
       for (let di = 0; di < n; di++) {
         if ((localDom[pos] & (1 << combo[di])) === 0) continue;
-        // 匹配边天然属于某个完美匹配；非匹配边需要同 SCC（存在交替环）。
-        if (matchDiOfPos[pos] === di || scc[pos] !== scc[di + n]) {
+        // 匹配边天然属于某个完美匹配；非匹配边需要两端同 SCC（存在交替环）。
+        if (matchDiOfPos[pos] === di || scc[pos] === scc[di + n]) {
           support |= 1 << combo[di];
         }
       }
@@ -243,9 +243,9 @@ function propagate(
       if (next !== domains[cell]) {
         domains[cell] = next;
         // 本线内某格收缩会影响其他格（互斥）；
-        // 同时加入与之交叉的另一条线。
+        // 同时加入与之交叉的另一条线（hRunOf/vRunOf 存的是 runs 全局下标）。
         dirty.add(ri);
-        const otherRi = run.dir === 'h' ? p.runInfo.hRunOf[cell] : p.runInfo.vRunOf[cell];
+        const otherRi = run.dir === 'h' ? p.runInfo.vRunOf[cell] : p.runInfo.hRunOf[cell];
         if (otherRi !== undefined) dirty.add(otherRi);
       }
     });
@@ -331,13 +331,15 @@ export function solve(
     while (wi < p.whiteCells.length && popcount(domains[p.whiteCells[wi]]) === 1) wi++;
     if (wi === p.whiteCells.length) {
       const sol = readSolution(domains);
+      // 最后防线：逐段复核互异与和，任何传播漏洞都不得让非法填法成为见证。
+      if (!verifyLeaf(sol)) return;
       witnesses.push(sol);
       return;
     }
     const cell = p.whiteCells[wi];
     const mask = domains[cell];
     // 数字从小到大，保证字典序。
-    for (let d = MAX_DIGIT; d >= MIN_DIGIT; d--) {
+    for (let d = MIN_DIGIT; d <= MAX_DIGIT; d++) {
       if ((mask & (1 << d)) === 0) continue;
       const child = domains.slice();
       child[cell] = 1 << d;

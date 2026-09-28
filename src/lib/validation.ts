@@ -123,7 +123,7 @@ export function validateBoard(board: Board): ValidationResult {
         });
       } else {
         const right = get(board, r, c + 1);
-        if (right && !isWhite(right)) {
+        if (!right || !isWhite(right)) {
           issues.push({
             code: 'DANGLING_H_CLUE',
             cell: i,
@@ -141,7 +141,7 @@ export function validateBoard(board: Board): ValidationResult {
         });
       } else {
         const below = get(board, r + 1, c);
-        if (below && !isWhite(below)) {
+        if (!below || !isWhite(below)) {
           issues.push({
             code: 'DANGLING_V_CLUE',
             cell: i,
@@ -215,7 +215,7 @@ export function validateBoard(board: Board): ValidationResult {
   for (const { dir, data } of checks) {
     const { seg, head, missingCode, label } = data;
     const len = seg.length;
-    if (len < 1) {
+    if (len < MIN_RUN_LEN) {
       issues.push({
         code: 'RUN_TOO_SHORT',
         cell: seg[0],

@@ -121,7 +121,9 @@
       jsonError = prep.error;
       return;
     }
+    jsonError = '';
     solution = solve(prep);
+    showSolution = true;
   }
 
   function candidateList(cell: number): number[] {

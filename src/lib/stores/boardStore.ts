@@ -192,18 +192,21 @@ let runToken = 0;
 export const validation = derived(boardStore, ($board) => validateBoard($board));
 
 boardStore.subscribe(($board) => {
-  // 任何修改：版本号 +1，旧结论立即失效（stale=true）。
+  // 任何修改：版本号 +1，旧结论立即失效（stale=true）；
+  // 清空旧结果与候选域，避免新棋盘上叠加旧版本的候选/见证；
+  // 同时作废所有进行中的分析，使其完成后不得写回。
+  runToken++;
   const v = validateBoard($board);
   analysis.update((s) => ({
     ...s,
     version: s.version + 1,
     valid: v.ok,
     issues: v.issues,
-    stale: true,
     status: 'idle',
+    result: null,
+    stale: true,
     error: undefined
   }));
-  // Analysis from an earlier board may still finish.
 });
 
 export async function runAnalysis(): Promise<void> {
@@ -212,6 +215,8 @@ export async function runAnalysis(): Promise<void> {
   analysis.update((s) => ({ ...s, status: 'running', stale: false, result: null }));
   // 让出一帧，按钮状态先渲染。
   await new Promise((res) => setTimeout(res, 0));
+  // 让出期间棋盘可能已被修改。
+  if (token !== runToken) return;
   try {
     const prep = preparePuzzle(board);
     if ('error' in prep) {
@@ -225,7 +230,8 @@ export async function runAnalysis(): Promise<void> {
       return;
     }
     const result = solve(prep);
-    // A result is displayed even if the board has since changed.
+    // 棋盘在分析期间被修改过：丢弃旧盘面的结果，绝不覆盖新版本的状态。
+    if (token !== runToken) return;
     analysis.update((s) => ({ ...s, status: 'done', result, stale: false }));
   } catch (e) {
     if (token !== runToken) return;

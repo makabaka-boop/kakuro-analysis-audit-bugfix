@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { get } from 'svelte/store';
 import type { Board, Cell, WallCell } from './types.js';
 import { validateBoard } from './validation.js';
 import { combinationsFor, possibleSums } from './combinations.js';
 import { preparePuzzle, solve, maskToDigits } from './solver.js';
+import { analysis, boardStore, runAnalysis, setClue } from './stores/boardStore.js';
 
 /**
  * 独立的朴素全枚举器：按行优先顺序枚举所有 1～9 赋值，
@@ -367,6 +369,17 @@ describe('校验：非法结构与线索', () => {
     expect(res.issues.some((i) => i.code === 'DANGLING_H_CLUE')).toBe(true);
   });
 
+  it('边缘悬空线索被拒（最底行墙格带 v、最右列墙格带 h：邻格出界）', () => {
+    // 4×3 盘面：(3,2) 是最底行最右列的墙，下方/右方均出界。
+    const board = block2x2([3, 3, 3, 3]);
+    (board.cells[3 * 3 + 2] as WallCell).v = 7;
+    (board.cells[3 * 3 + 2] as WallCell).h = 7;
+    const res = validateBoard(board);
+    expect(res.ok).toBe(false);
+    expect(res.issues.some((i) => i.code === 'DANGLING_V_CLUE')).toBe(true);
+    expect(res.issues.some((i) => i.code === 'DANGLING_H_CLUE')).toBe(true);
+  });
+
   it('白格段长度 1 被拒（缺少另一个格=缺少所属线）', () => {
     // 把 d 改成墙：c 成为长度 1 的横段，且第 3 列竖线只剩 b。
     const board = block2x2([3, 3, 3, 3]);
@@ -433,5 +446,46 @@ describe('候选查看', () => {
       const used = new Set(r.witnesses.map((w) => w[wi]));
       for (const d of used) expect(maskToDigits(r.domains[cell])).toContain(d);
     });
+  });
+
+  it('每份见证都严格满足全部线段的互异与和（防非法填法混入结论）', () => {
+    const board = block2x3([15, 15, 10, 10, 10]);
+    const prep = preparePuzzle(board);
+    if ('error' in prep) throw new Error(prep.error);
+    const r = solve(prep);
+    for (const w of r.witnesses) {
+      for (const run of prep.runs) {
+        const ds = run.cells.map((cell) => w[prep.whiteCells.indexOf(cell)]);
+        expect(new Set(ds).size).toBe(ds.length);
+        expect(ds.every((d) => d >= 1 && d <= 9)).toBe(true);
+        expect(ds.reduce((a, b) => a + b, 0)).toBe(run.clue);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 异步分析的版本一致性：分析进行中修改棋盘，旧结果不得覆盖新版本
+// ---------------------------------------------------------------------------
+
+describe('分析版本管理', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('分析进行中改盘：旧盘面结果被丢弃，新状态不保留旧结论', async () => {
+    vi.useFakeTimers();
+    boardStore.set(block2x2([3, 3, 3, 3]));
+
+    // runAnalysis 内部先 await setTimeout(0) 再求解；趁这个间隙改盘。
+    const running = runAnalysis();
+    setClue(1 * 3, 'h', '4'); // W(H1): 3 -> 4，runToken 作废
+    await vi.runAllTimersAsync();
+    await running;
+
+    const s = get(analysis);
+    expect(s.status).toBe('idle');
+    expect(s.stale).toBe(true);
+    expect(s.result).toBeNull();
   });
 });
