@@ -192,7 +192,9 @@ let runToken = 0;
 export const validation = derived(boardStore, ($board) => validateBoard($board));
 
 boardStore.subscribe(($board) => {
-  // 任何修改：版本号 +1，旧结论立即失效（stale=true）。
+  // 任何修改：版本号 +1，旧结论立即失效（stale=true），
+  // 同时作废正在进行的旧搜索，其完成时不得再写回结果。
+  runToken++;
   const v = validateBoard($board);
   analysis.update((s) => ({
     ...s,
@@ -203,7 +205,6 @@ boardStore.subscribe(($board) => {
     status: 'idle',
     error: undefined
   }));
-  // Analysis from an earlier board may still finish.
 });
 
 export async function runAnalysis(): Promise<void> {
@@ -225,8 +226,10 @@ export async function runAnalysis(): Promise<void> {
       return;
     }
     const result = solve(prep);
-    // A result is displayed even if the board has since changed.
-    analysis.update((s) => ({ ...s, status: 'done', result, stale: false }));
+    // 求解期间盘面可能已被修改：旧结果一律丢弃，
+    // 页面上的线索、候选与结论必须属于同一个版本。
+    if (token !== runToken) return;
+    analysis.update((s) => ({ ...s, status: 'done', result }));
   } catch (e) {
     if (token !== runToken) return;
     analysis.update((s) => ({

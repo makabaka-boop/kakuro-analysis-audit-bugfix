@@ -367,6 +367,22 @@ describe('校验：非法结构与线索', () => {
     expect(res.issues.some((i) => i.code === 'DANGLING_H_CLUE')).toBe(true);
   });
 
+  it('边缘悬空线索被拒（右/下越界时不得漏检）', () => {
+    // 2×2 全墙：(0,0).h 右侧是墙；(0,1).v 下方是墙；
+    // 另测一个真正越界的：最右列带 h、最底行带 v。
+    const board: Board = {
+      rows: 2,
+      cols: 2,
+      cells: wallCells(4)
+    };
+    (board.cells[1] as WallCell).h = 9; // 最右列，右侧越界
+    (board.cells[2] as WallCell).v = 9; // 最底行，下方越界
+    const res = validateBoard(board);
+    expect(res.ok).toBe(false);
+    expect(res.issues.some((i) => i.code === 'DANGLING_H_CLUE')).toBe(true);
+    expect(res.issues.some((i) => i.code === 'DANGLING_V_CLUE')).toBe(true);
+  });
+
   it('白格段长度 1 被拒（缺少另一个格=缺少所属线）', () => {
     // 把 d 改成墙：c 成为长度 1 的横段，且第 3 列竖线只剩 b。
     const board = block2x2([3, 3, 3, 3]);

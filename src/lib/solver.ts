@@ -152,8 +152,9 @@ function analyzeRun(
       let support = 0;
       for (let di = 0; di < n; di++) {
         if ((localDom[pos] & (1 << combo[di])) === 0) continue;
-        // 匹配边天然属于某个完美匹配；非匹配边需要同 SCC（存在交替环）。
-        if (matchDiOfPos[pos] === di || scc[pos] !== scc[di + n]) {
+        // 边 (pos, di) 属于某个完美匹配当且仅当：它本身是匹配边，
+        // 或其两端位于同一 SCC（残差图上存在交替环，可沿环交换）。
+        if (matchDiOfPos[pos] === di || scc[pos] === scc[di + n]) {
           support |= 1 << combo[di];
         }
       }
@@ -243,9 +244,9 @@ function propagate(
       if (next !== domains[cell]) {
         domains[cell] = next;
         // 本线内某格收缩会影响其他格（互斥）；
-        // 同时加入与之交叉的另一条线。
+        // 同时加入与之交叉的另一条方向的线。
         dirty.add(ri);
-        const otherRi = run.dir === 'h' ? p.runInfo.hRunOf[cell] : p.runInfo.vRunOf[cell];
+        const otherRi = run.dir === 'h' ? p.runInfo.vRunOf[cell] : p.runInfo.hRunOf[cell];
         if (otherRi !== undefined) dirty.add(otherRi);
       }
     });
@@ -331,13 +332,15 @@ export function solve(
     while (wi < p.whiteCells.length && popcount(domains[p.whiteCells[wi]]) === 1) wi++;
     if (wi === p.whiteCells.length) {
       const sol = readSolution(domains);
-      witnesses.push(sol);
+      // 兜底：传播应当已保证可行性，仍逐线复核和与互异，
+      // 任何不满足线索的赋值都不得进入见证。
+      if (verifyLeaf(sol)) witnesses.push(sol);
       return;
     }
     const cell = p.whiteCells[wi];
     const mask = domains[cell];
-    // 数字从小到大，保证字典序。
-    for (let d = MAX_DIGIT; d >= MIN_DIGIT; d--) {
+    // 数字从小到大，保证找到的前两个解即行优先字典序最小的两个。
+    for (let d = MIN_DIGIT; d <= MAX_DIGIT; d++) {
       if ((mask & (1 << d)) === 0) continue;
       const child = domains.slice();
       child[cell] = 1 << d;
